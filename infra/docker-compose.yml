@@ -1,0 +1,45 @@
+name: rag-knowledge-assistant
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: rka
+      POSTGRES_PASSWORD: rka
+      POSTGRES_DB: rka
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rka -d rka"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: ../backend
+    env_file: ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://rka_app:rka_app@db:5432/rka
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://rka:rka@db:5432/rka
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: ../backend
+    env_file: ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://rka_app:rka_app@db:5432/rka
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://rka:rka@db:5432/rka
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
