@@ -1,0 +1,7 @@
+# Keep LF line endings in the repo and on every checkout, including Windows,
+# so files copied into Linux containers behave the same everywhere.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.png binary
+*.pdf binary
