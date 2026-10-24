@@ -6,6 +6,7 @@ don't exist in SQLite or in mocks.
 """
 
 import os
+import tempfile
 
 # Settings are read when the app is imported, so these must be set first.
 os.environ.setdefault("ENVIRONMENT", "test")
@@ -18,6 +19,8 @@ os.environ.setdefault(
     "MIGRATIONS_DATABASE_URL",
     "postgresql+asyncpg://rka:rka@localhost:5432/rka_test",
 )
+os.environ.setdefault("STORAGE_DIR", tempfile.mkdtemp(prefix="rka-test-uploads-"))
+os.environ.setdefault("EMBEDDING_PROVIDER", "fake")
 
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -32,6 +35,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
+from app.api.deps import get_job_queue
 from app.core.security import hash_password
 from app.db.models import Tenant, User, UserRole
 from app.main import create_app
@@ -74,11 +78,39 @@ async def _clean_database(owner_engine: AsyncEngine) -> None:
         await conn.execute(text("TRUNCATE tenants CASCADE"))
 
 
+class RecordingQueue:
+    """Stands in for Redis: remembers what would have been queued."""
+
+    def __init__(self) -> None:
+        self.ingest_jobs: list[tuple[uuid.UUID, uuid.UUID]] = []
+
+    async def enqueue_ingest(self, tenant_id: uuid.UUID, document_id: uuid.UUID) -> None:
+        self.ingest_jobs.append((tenant_id, document_id))
+
+    async def close(self) -> None:
+        return None
+
+
 @pytest.fixture
-async def client() -> AsyncIterator[AsyncClient]:
-    transport = ASGITransport(app=create_app())
+def queue() -> RecordingQueue:
+    return RecordingQueue()
+
+
+@pytest.fixture
+async def client(queue: RecordingQueue) -> AsyncIterator[AsyncClient]:
+    app = create_app()
+    app.dependency_overrides[get_job_queue] = lambda: queue
+    transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http:
         yield http
+
+
+async def auth_headers(client: AsyncClient, user: "SeededUser") -> dict[str, str]:
+    response = await client.post(
+        "/api/v1/auth/login", json={"email": user.email, "password": user.password}
+    )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
 @dataclass(frozen=True)
