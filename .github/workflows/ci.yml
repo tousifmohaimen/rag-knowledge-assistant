@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: rka
+          POSTGRES_PASSWORD: rka
+          POSTGRES_DB: rka_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rka -d rka_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      ENVIRONMENT: test
+      JWT_SECRET: ci-only-secret-that-is-at-least-32-characters
+      DATABASE_URL: postgresql+asyncpg://rka_app:rka_app@localhost:5432/rka_test
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://rka:rka@localhost:5432/rka_test
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Create the API database role
+        env:
+          PGPASSWORD: rka
+        run: >-
+          psql -h localhost -U rka -d rka_test
+          -c "CREATE ROLE rka_app LOGIN PASSWORD 'rka_app'"
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Check migrations match the models
+        run: uv run alembic upgrade head && uv run alembic check
+
+      - name: Test
+        run: uv run pytest
