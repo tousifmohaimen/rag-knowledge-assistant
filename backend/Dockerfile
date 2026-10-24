@@ -15,7 +15,11 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
-RUN useradd --create-home --uid 10001 appuser && chown -R appuser /app
+# The uploads folder is created here, owned by the app user, so a Docker volume
+# mounted on it starts out writable.
+RUN useradd --create-home --uid 10001 appuser \
+    && mkdir -p /data/uploads \
+    && chown -R appuser /app /data
 USER appuser
 
 ENV PATH="/app/.venv/bin:$PATH"

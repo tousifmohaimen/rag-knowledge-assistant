@@ -40,8 +40,8 @@ def configure_logging(level: str) -> None:
     root.handlers = [handler]
     root.setLevel(level)
 
-    # Send uvicorn's own logs through the same JSON handler.
-    for name in ("uvicorn", "uvicorn.error"):
+    # Send uvicorn's and arq's own logs through the same JSON handler.
+    for name in ("uvicorn", "uvicorn.error", "arq", "arq.worker", "arq.jobs"):
         logger = logging.getLogger(name)
         logger.handlers = []
         logger.propagate = True

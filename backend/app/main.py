@@ -12,6 +12,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_var
 from app.db.session import dispose_engine
+from app.workers.queue import ArqJobQueue
 
 logger = logging.getLogger("app.request")
 
@@ -20,8 +21,9 @@ _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
+    await app.state.job_queue.close()
     await dispose_engine()
 
 
@@ -38,6 +40,8 @@ def create_app() -> FastAPI:
         redoc_url=None,
         openapi_url=None if settings.is_production else "/openapi.json",
     )
+    # Connects to Redis on first use, so the API starts even if Redis isn't up yet.
+    app.state.job_queue = ArqJobQueue(settings.redis_url)
 
     app.add_middleware(
         CORSMiddleware,

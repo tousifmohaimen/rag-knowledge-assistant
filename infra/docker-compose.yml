@@ -1,5 +1,17 @@
 name: rag-knowledge-assistant
 
+# Shared by every service built from the backend image.
+x-backend: &backend
+  build: ../backend
+  env_file: ../backend/.env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://rka_app:rka_app@db:5432/rka
+    MIGRATIONS_DATABASE_URL: postgresql+asyncpg://rka:rka@db:5432/rka
+    REDIS_URL: redis://redis:6379/0
+    STORAGE_DIR: /data/uploads
+  volumes:
+    - uploads:/data/uploads
+
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -18,28 +30,42 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   migrate:
-    build: ../backend
-    env_file: ../backend/.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://rka_app:rka_app@db:5432/rka
-      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://rka:rka@db:5432/rka
+    <<: *backend
     command: ["alembic", "upgrade", "head"]
     depends_on:
       db:
         condition: service_healthy
 
   api:
-    build: ../backend
-    env_file: ../backend/.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://rka_app:rka_app@db:5432/rka
-      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://rka:rka@db:5432/rka
+    <<: *backend
     ports:
       - "8000:8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *backend
+    command: ["arq", "app.workers.worker.WorkerSettings"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
 volumes:
   pgdata:
+  uploads:
