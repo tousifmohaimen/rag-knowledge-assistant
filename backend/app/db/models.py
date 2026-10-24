@@ -99,6 +99,8 @@ class ApiKey(UUIDPrimaryKey, TenantOwned, CreatedAt, Base):
 
 class Document(UUIDPrimaryKey, TenantOwned, CreatedAt, Base):
     __tablename__ = "documents"
+    # Read database-generated values (updated_at) back on every insert and update.
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012 (SQLAlchemy reads this dict)
     __table_args__ = (
         UniqueConstraint("tenant_id", "content_hash"),
         CheckConstraint(_one_of("status", DocumentStatus), name="status_valid"),
@@ -149,6 +151,8 @@ class Chunk(UUIDPrimaryKey, TenantOwned, CreatedAt, Base):
 
 class Conversation(UUIDPrimaryKey, TenantOwned, CreatedAt, Base):
     __tablename__ = "conversations"
+    # Read database-generated values (updated_at) back on every insert and update.
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012 (SQLAlchemy reads this dict)
 
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), index=True
